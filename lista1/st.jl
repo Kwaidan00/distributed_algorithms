@@ -42,7 +42,7 @@ type Node
     this.neighbourhood = Set{Int64}()
 
     this.setLeader = function ()
-      leader = true
+      this.leader = true
     end
     this.rootFunction = function (channels::Array{Channel{Tuple{Symbol, Int}}})
       # root wysyła swoje ID to wszystkich swoich sąsiadów
@@ -51,12 +51,12 @@ type Node
           put!(channels[id], (:search, this.uid))
         end
         rMsg = 0
-        eMsg = length(this.neighbourhood)
+        eMsg = 2*length(this.neighbourhood)
         while rMsg < eMsg
           (msg, senderId) = take!(channels[this.uid])
           rMsg += 1
           if msg == :youaremyfather
-            push!(childrens, senderId)
+            push!(this.childrens, senderId)
           elseif msg == :search
             put!(channels[senderId], (:goaway, this.uid))
           end
@@ -67,21 +67,21 @@ type Node
     this.nodeFunction = function (channels::Array{Channel{Tuple{Symbol, Int}}})
       if !this.leader
         rMsg = 0
-        eMsg = length(this.neighbourhood)
+        eMsg = 2*length(this.neighbourhood)
         while rMsg < eMsg
           (msg, senderId) = take!(channels[this.uid])
           rMsg += 1
           if msg == :search
             if this.parent == 0
-              parent = senderId
+              this.parent = senderId
               put!(channels[senderId], (:youaremyfather, this.uid))
               for id in this.neighbourhood
-                if id != senderId
+            #    if id != senderId
                   put!(channels[id], (:search, this.uid))
-                end
+            #    end
               end
             else
-              put!(channels[senderId], :goaway)
+              put!(channels[senderId], (:goaway, this.uid))
             end
           elseif msg == :youaremyfather
             push!(this.childrens, senderId)
@@ -97,14 +97,6 @@ type Node
 
 end
 
-
-function st(nodes ::Node[], leaderIndex ::Int64 = 1)
-  maxRound = 1000
-  for i in 1:maxRound
-    # decide if I want to send sth
-  end
-
-end
 
 n = 5
 testRange = 1:n
@@ -128,6 +120,8 @@ nodes[4].addToNeighbourhood(2)
 nodes[4].addToNeighbourhood(5)
 nodes[5].addToNeighbourhood(3)
 nodes[5].addToNeighbourhood(4)
+
+nodes[1].setLeader()
 
 channels = [Channel{Tuple{Symbol, Int}}(n) for i=1:n]
 
