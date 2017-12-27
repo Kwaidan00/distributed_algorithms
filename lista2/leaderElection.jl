@@ -63,7 +63,6 @@ type Node
     this.nodeFunction = function (channels::Array{Channel{Tuple{Symbol, Int, Int, Int, Symbol}}})
       if this.asleep
         asleep = false
-      #  send <probe, id, 0, 0> to links CW and CCW
         put!(channels[this.rightNeighbour], (:probe, this.uid, 0, 0, :right))
         put!(channels[this.leftNeighbour], (:probe, this.uid, 0, 0, :left))
       end
@@ -81,19 +80,14 @@ type Node
         (msgType, ids, phase, ttl, direction) = take!(channels[this.myPosition])
         if msgType == :probe
           if this.uid == ids && this.leaderIsNil
-            # send terminate to link CCW
             put!(channels[this.leftNeighbour], (:terminate, this.uid, -1, -1, :left))
             this.leader = true
             this.leaderIsNil = false
             shouldITerminate = true
           elseif ids > this.uid && ttl > 0
-            # Pass the msg
-            # send <probe, ids, phase, ttl−1>to link CCW (resp. CW)
             passMsg(:probe, ids, phase, ttl-1, direction)
-            #put!(channels[direction == :left ? this.leftNeighbour : this.rightNeighbour], (:probe, ids, phase, ttl-1, direction))
           elseif ids > this.uid && ttl == 0
             turnBackMsg(:reply, ids, phase, ttl, direction)
-            #put!(channels[direction == :left ? this.rightNeighbour : this.leftNeighbour], (:reply, ids, phase, ttl, direction == :left ? :right : :left))
           end
         end # of probe
         if msgType == :reply
@@ -148,18 +142,30 @@ function createRing(n::Int64) :: Vector{Node}
     end
     return index
   end
+  function createRandomUID(n::Int64) :: Vector{Int64}
+    uids = Vector{Int64}()
+    for j in 1:n
+      r = rand(1:n*100)
+      while r in uids
+        r = rand(1:n*100)
+      end
+      push!(uids, r)
+    end
+    return uids
+  end
 
   nodes = Vector{Node}()
+  uids = createRandomUID(n)
   for j in 1:n
     randUID = rand(1:1000)
-    push!(nodes, Node(randUID, j, getLeftNeighbour(j), getRightNeighbour(j)))
+    push!(nodes, Node(uids[j], j, getLeftNeighbour(j), getRightNeighbour(j)))
   end
   return nodes
 end
 
 
-function ringLE(n::Int64) :: Int64
-  nodes = createRing(n)
+function ringLE(nodes::Vector{Node}) :: Int64
+  n = length(nodes)
   channels = [Channel{Tuple{Symbol, Int, Int, Int, Symbol}}(n) for i=1:n]
   @sync for i in 1:n
     @async nodes[i].nodeFunction(channels)
@@ -171,4 +177,85 @@ function ringLE(n::Int64) :: Int64
   end
 end
 
-ringLE(10)
+function ringLESimple(n::Int64) :: Int64
+  nodes = createRing(n)
+  return ringLE(nodes)
+end
+
+ringLESimple(10)
+
+
+
+
+# It's not an elegant solution, but was added to satisfy the assignment 'input' requirement
+
+using LightGraphs
+
+function createFromListOfNeighbours(l::Vector{Tuple{Int64, Array{Int64, 1}}})
+  n = length(l)
+  vertices = []
+  for j in 1:n
+    push!(vertices, l[j][1])
+  end
+
+  g = DiGraph(n)
+
+  for j in 1:n
+    v = findfirst(vertices, l[j][1])
+    neigh = l[j][2]
+    for k in 1:length(neigh)
+      add_edge!(g, v, findfirst(vertices, neigh[k]))
+    end
+  end
+
+  cycles = simplecycles(g)
+  sort!(cycles, by = x -> length(x), rev = true)
+
+  c1 = cycles[1]
+  c2 = cycles[2]
+
+  if length(c1) != length(c2)
+    throw("Unable to construct ring")
+  end
+
+  check = getindex(c2, 2:length(c2))
+  push!(check, c2[1])
+  reverse!(check)
+  for j in 1:length(c1)
+    if c1[j] != check[j]
+      throw("Unable to construct")
+    end
+  end
+
+  function getLeftNeighbour(i::Int64) :: Int64
+    index = i + 1
+    if index > n
+      index = 1
+    end
+    return index
+  end
+  function getRightNeighbour(i::Int64) :: Int64
+    index = i - 1
+    if index < 1
+      index = n
+    end
+    return index
+  end
+
+  nodes = Vector{Node}()
+  for j in 1:n
+    randUID = rand(1:1000)
+    push!(nodes, Node(vertices[j], j, getLeftNeighbour(j), getRightNeighbour(j)))
+  end
+
+  return nodes
+end
+
+listOfNodes = Vector{Tuple{Int64, Array{Int64, 1}}}()
+push!(listOfNodes, (1, [3, 7]))
+push!(listOfNodes, (3, [4, 1]))
+push!(listOfNodes, (4, [3, 50]))
+push!(listOfNodes, (50, [4, 7]))
+push!(listOfNodes, (7, [50, 1]))
+
+ringLE(createFromListOfNeighbours(listOfNodes))
